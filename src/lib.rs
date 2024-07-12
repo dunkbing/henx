@@ -1,6 +1,7 @@
 #[cfg(target_os = "macos")]
 mod mac;
 
+use mac::SRWindowInfo;
 #[cfg(target_os = "macos")]
 use mac::{encoder_finish, encoder_ingest_bgra_frame, encoder_ingest_yuv_frame, encoder_init, Int};
 
@@ -151,5 +152,37 @@ impl VideoEncoder {
             encoder_finish(self.encoder);
         }
         Ok(())
+    }
+}
+
+pub struct WindowInfo {
+    pub title: String,
+    pub app_name: String,
+    pub bundle_id: String,
+    pub is_on_screen: bool,
+    pub id: isize,
+}
+
+pub fn get_windows_list(filter: bool, capture: bool) -> Vec<WindowInfo> {
+    let windows = unsafe { mac::get_windows_and_thumbnails(filter, capture) };
+    let windows = windows.as_slice();
+
+    windows
+        .into_iter()
+        .map(|window| WindowInfo {
+            title: window.title.to_string(),
+            app_name: window.app_name.to_string(),
+            bundle_id: window.bundle_id.to_string(),
+            is_on_screen: window.is_on_screen,
+            id: window.id,
+        })
+        .collect()
+}
+
+pub fn get_tuples() {
+    let tuples = unsafe { mac::get_tuples() };
+    for tuple in tuples.as_slice() {
+        // Will print each tuple's contents to the console
+        println!("Item 1: {}, Item 2: {}", tuple.item1, tuple.item2);
     }
 }
