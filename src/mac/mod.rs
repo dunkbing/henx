@@ -1,5 +1,5 @@
 use swift_rs::swift;
-pub use swift_rs::{Int, SRData, SRString, Bool, SRObjectArray};
+pub use swift_rs::{Bool, Int, SRData, SRObjectArray, SRString};
 
 swift!(pub fn encoder_init(
     width: Int,
@@ -37,7 +37,7 @@ swift!(pub fn get_windows_and_thumbnails(
 #[repr(C)]
 pub struct IntTuple {
     pub item1: Int,
-    pub item2: Int
+    pub item2: Int,
 }
 
 swift!(pub fn get_tuples() -> SRObjectArray<IntTuple>);

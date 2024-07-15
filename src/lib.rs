@@ -1,7 +1,6 @@
 #[cfg(target_os = "macos")]
 mod mac;
 
-use mac::SRWindowInfo;
 #[cfg(target_os = "macos")]
 use mac::{encoder_finish, encoder_ingest_bgra_frame, encoder_ingest_yuv_frame, encoder_init, Int};
 
