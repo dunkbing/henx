@@ -146,8 +146,14 @@ func encoderFinish(_ enc: Encoder) {
 }
 
 class WindowManager: NSObject, SCStreamDelegate, SCStreamOutput {
+    static let shared = WindowManager()
+    
+    private override init() {
+        super.init()
+    }
+    
     var windowThumbnails = [SCDisplay:[WindowThumbnail]]()
-    private var allWindows = [SCWindow]()
+    var allWindows = [SCWindow]()
     private var streams = [SCStream]()
     
     func getWindows(filter: Bool = true, capture: Bool = true, completion: @escaping () -> Void) {
@@ -241,6 +247,80 @@ class WindowManager: NSObject, SCStreamDelegate, SCStreamOutput {
             self.streams[index].stopCapture()
         }
     }
+    
+    func captureWindowScreen(windowID: CGWindowID) async throws -> Data {
+        guard let window = allWindows.first(where: { $0.windowID == windowID }) else {
+            throw NSError(domain: "WindowManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Window not found"])
+        }
+        
+        let contentFilter = SCContentFilter(desktopIndependentWindow: window)
+        let streamConfiguration = SCStreamConfiguration()
+        streamConfiguration.width = Int(window.frame.width)
+        streamConfiguration.height = Int(window.frame.height)
+        streamConfiguration.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(1))
+        streamConfiguration.pixelFormat = kCVPixelFormatType_32BGRA
+        if #available(macOS 13, *) { streamConfiguration.capturesAudio = false }
+        streamConfiguration.showsCursor = false
+        streamConfiguration.scalesToFit = true
+        streamConfiguration.queueDepth = 1
+        
+        let stream = SCStream(filter: contentFilter, configuration: streamConfiguration, delegate: nil)
+        
+        let captureDelegate = SingleFrameCaptureDelegate()
+        
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
+            captureDelegate.onFrame = { sampleBuffer in
+                guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+                    continuation.resume(throwing: NSError(domain: "WindowManager", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to get pixel buffer"]))
+                    return
+                }
+                
+                let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+                let ciContext = CIContext()
+                guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else {
+                    continuation.resume(throwing: NSError(domain: "WindowManager", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to create CGImage"]))
+                    return
+                }
+                
+                let nsImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                guard let tiffData = nsImage.tiffRepresentation else {
+                    continuation.resume(throwing: NSError(domain: "WindowManager", code: 4, userInfo: [NSLocalizedDescriptionKey: "Failed to get TIFF representation"]))
+                    return
+                }
+                
+                continuation.resume(returning: tiffData)
+                stream.stopCapture()
+            }
+            
+            do {
+                try stream.addStreamOutput(captureDelegate, type: .screen, sampleHandlerQueue: .main)
+                stream.startCapture()
+            } catch {
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+}
+
+class SingleFrameCaptureDelegate: NSObject, SCStreamOutput {
+    var onFrame: ((CMSampleBuffer) -> Void)?
+    
+    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+        onFrame?(sampleBuffer)
+    }
+}
+
+actor CaptureState {
+    var capturedData: Data?
+    var captureError: Error?
+    
+    func setCapturedData(_ data: Data) {
+        capturedData = data
+    }
+    
+    func setCaptureError(_ error: Error) {
+        captureError = error
+    }
 }
 
 struct WindowThumbnail {
@@ -266,102 +346,39 @@ class WindowInfo: NSObject {
     }
 }
 
-//@_cdecl("get_windows_and_thumbnails")
-//func getWindowsAndThumbnails(_ filter: Bool, _ capture: Bool) -> SRObjectArray {
-//    let windowManager = SCContext()
-//    let semaphore = DispatchSemaphore(value: 0)
-//
-//    SCContext.updateAvailableContent {
-//        print("updateAvailableContent done")
-//        semaphore.signal()
-//    }
-//
-//    semaphore.wait()
-//
-//    let windows = SCContext.getWindows(isOnScreen: true, hideSelf: true)
-//    print("got some windows")
-//    var result: [WindowInfo] = []
-//
-//    for window in windows {
-//        let windowInfo = WindowInfo(
-//            title: SRString(window.title ?? ""),
-//            app_name: SRString(window.owningApplication?.applicationName ?? ""),
-//            bundle_id: SRString(window.owningApplication?.bundleIdentifier ?? ""),
-//            is_on_screen: window.isOnScreen,
-//            id: Int(window.windowID)
-//        )
-//        result.append(windowInfo)
-//    }
-//    
-//    return SRObjectArray(result)
-//}
-
-@_cdecl("get_windows_and_thumbnails")
-func getWindowsAndThumbnails(_ filter: Bool, _ capture: Bool) -> SRObjectArray {
-    let windowManager = WindowManager()
+@_cdecl("get_windows_info")
+func getWindowsInfo(_ filter: Bool, _ capture: Bool) -> SRObjectArray {
+    let windowManager = WindowManager.shared
     let semaphore = DispatchSemaphore(value: 0)
     
     windowManager.getWindows(filter: filter, capture: capture) {
         semaphore.signal()
     }
-    
+
     semaphore.wait()
 
     var result: [WindowInfo] = []
+    print("windows len", windowManager.windowThumbnails.count, windowManager.allWindows.count)
+    print(windowManager.allWindows[0].windowID)
 
-    for (display, thumbnails) in windowManager.windowThumbnails {
-        for thumbnail in thumbnails {
-//            let windowInfo: [String: Any] = [
-//                "displayID": display.displayID,
-//                "windowTitle": thumbnail.window.title ?? "",
-//                "windowFrame": [
-//                    "x": thumbnail.window.frame.origin.x,
-//                    "y": thumbnail.window.frame.origin.y,
-//                    "width": thumbnail.window.frame.size.width,
-//                    "height": thumbnail.window.frame.size.height
-//                ],
-//                "appName": thumbnail.window.owningApplication?.applicationName ?? "",
-//                "bundleID": thumbnail.window.owningApplication?.bundleIdentifier ?? "",
-//                "thumbnailData": thumbnail.image.tiffRepresentation ?? Data()
-//            ]
-            let windowInfo = WindowInfo(
-                title: SRString(thumbnail.window.title ?? ""),
-                app_name: SRString(thumbnail.window.owningApplication?.applicationName ?? ""),
-                bundle_id: SRString(thumbnail.window.owningApplication?.bundleIdentifier ?? ""),
-                is_on_screen: thumbnail.window.isOnScreen,
-                id: Int(thumbnail.window.windowID),
-                thumbnail_data: thumbnail.image.tiffRepresentation ?? Data()
-            )
-            result.append(windowInfo)
-        }
+    for window in windowManager.allWindows {
+        let windowInfo = WindowInfo(
+            title: SRString(window.title ?? ""),
+            app_name: SRString(window.owningApplication?.applicationName ?? ""),
+            bundle_id: SRString(window.owningApplication?.bundleIdentifier ?? ""),
+            is_on_screen: window.isOnScreen,
+            id: Int(window.windowID),
+//            thumbnail_data: thumbnail.image.tiffRepresentation ?? Data()
+            thumbnail_data: Data()
+        )
+        result.append(windowInfo)
     }
 
     return SRObjectArray(result)
 }
 
-class IntTuple: NSObject {
-    var item1: Int
-    var item2: Int
-
-    init(_ item1: Int, _ item2: Int) {
-       self.item1 = item1
-       self.item2 = item2
-    }
-}
-
-@_cdecl("get_tuples")
-public func getTuples() -> SRObjectArray {
-    print("hello from swift")
-    let tuple1 = IntTuple(0,1),
-        tuple2 = IntTuple(2,3),
-        tuple3 = IntTuple(4,5)
-
-    let tupleArray: [IntTuple] = [
-        tuple1,
-        tuple2,
-        tuple3
-    ]
-
-    // Type safety is only lost when the Swift array is converted to an SRObjectArray
-    return SRObjectArray(tupleArray)
+@_cdecl("get_app_icon")
+func getAppIcon(_ bundleId: SRString) -> SRString {
+    let base64Icon = SCContext.getAppIconBase64(bundleId.toString())
+    return SRString(base64Icon)
 }

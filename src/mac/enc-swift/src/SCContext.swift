@@ -117,31 +117,34 @@ class SCContext {
         }
         return windows
     }
-    
-    static func getAppIcon(
-        _ app: SCRunningApplication
-    ) -> NSImage? {
-        if let appURL = NSWorkspace.shared.urlForApplication(
-            withBundleIdentifier: app.bundleIdentifier
-        ) {
-            let icon = NSWorkspace.shared.icon(
-                forFile: appURL.path
-            )
-            icon.size = NSSize(
-                width: 69,
-                height: 69
-            )
-            return icon
+
+    static func imageToBase64(_ image: NSImage, _ compressionFactor: Float = 0.02) -> String {
+        guard let tiffData = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData),
+              let jpegData = bitmap.representation(using: .png, properties: [.compressionFactor: compressionFactor]) else {
+            return ""
         }
-        let icon = NSImage(
-            systemSymbolName: "questionmark.app.dashed",
-            accessibilityDescription: "blank icon"
-        )
-        icon!.size = NSSize(
-            width: 69,
-            height: 69
-        )
-        return icon
+        return jpegData.base64EncodedString(options: .endLineWithLineFeed)
+    }
+
+    static func getAppIconBase64(
+        _ bundleIdentifier: String
+    ) -> String {
+        
+        
+        if let appURL = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: bundleIdentifier
+        ) {
+            let icon = NSWorkspace.shared.icon(forFile: appURL.path)
+            icon.size = NSSize(width: 69, height: 69)
+            return imageToBase64(icon, 0.2)
+        } else {
+            if let icon = NSImage(systemSymbolName: "questionmark.app.dashed", accessibilityDescription: "blank icon") {
+                icon.size = NSSize(width: 69, height: 69)
+                return imageToBase64(icon, 0.5)
+            }
+        }
+        return ""
     }
     
     static func updateAudioSettings(

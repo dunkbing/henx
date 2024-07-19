@@ -29,18 +29,12 @@ swift!(pub fn encoder_ingest_bgra_frame(
 
 swift!(pub fn encoder_finish(enc: *mut std::ffi::c_void));
 
-swift!(pub fn get_windows_and_thumbnails(
+swift!(pub fn get_windows_info(
     filter: Bool,
     capture: Bool
 ) -> SRObjectArray<SRWindowInfo>);
 
-#[repr(C)]
-pub struct IntTuple {
-    pub item1: Int,
-    pub item2: Int,
-}
-
-swift!(pub fn get_tuples() -> SRObjectArray<IntTuple>);
+swift!(pub fn get_app_icon(bundle_id: SRString) -> SRString);
 
 #[repr(C)]
 pub struct SRWindowInfo {
@@ -49,5 +43,4 @@ pub struct SRWindowInfo {
     pub bundle_id: SRString,
     pub is_on_screen: Bool,
     pub id: Int,
-    pub thumbnail_data: SRData,
 }

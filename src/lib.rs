@@ -1,9 +1,12 @@
 #[cfg(target_os = "macos")]
 mod mac;
 
+use std::io::Write;
+
 #[cfg(target_os = "macos")]
 use mac::{encoder_finish, encoder_ingest_bgra_frame, encoder_ingest_yuv_frame, encoder_init, Int};
 
+use swift_rs::SRString;
 #[cfg(target_os = "windows")]
 use windows_capture::encoder::{
     VideoEncoder as WVideoEncoder, VideoEncoderQuality, VideoEncoderType,
@@ -163,7 +166,7 @@ pub struct WindowInfo {
 }
 
 pub fn get_windows_list(filter: bool, capture: bool) -> Vec<WindowInfo> {
-    let windows = unsafe { mac::get_windows_and_thumbnails(filter, capture) };
+    let windows = unsafe { mac::get_windows_info(filter, capture) };
     let windows = windows.as_slice();
 
     windows
@@ -178,10 +181,8 @@ pub fn get_windows_list(filter: bool, capture: bool) -> Vec<WindowInfo> {
         .collect()
 }
 
-pub fn get_tuples() {
-    let tuples = unsafe { mac::get_tuples() };
-    for tuple in tuples.as_slice() {
-        // Will print each tuple's contents to the console
-        println!("Item 1: {}, Item 2: {}", tuple.item1, tuple.item2);
-    }
+pub fn get_app_icon(bundle_id: &str) -> String {
+    let data = unsafe { mac::get_app_icon(bundle_id.into()) };
+    let prefix = "data:image/jpeg;base64";
+    return format!("{prefix},{data}");
 }
