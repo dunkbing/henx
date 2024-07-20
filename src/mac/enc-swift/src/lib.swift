@@ -11,38 +11,38 @@ class Encoder: NSObject {
     var assetWriter: AVAssetWriter
     var assetWriterInput: AVAssetWriterInput
     var pixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor
-    
+
     init(_ width: Int, _ height: Int, _ outFile: URL) {
         self.width = width
         self.height = height
-        
+
         // Setup AVAssetWriter
         // Create AVAssetWriter for a mp4 file
         self.assetWriter = try! AVAssetWriter(url: outFile, fileType: .mp4)
-        
+
         // Prepare the AVAssetWriterInputPixelBufferAdaptor
         let outputSettings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: width,
             AVVideoHeightKey: height,
         ]
-        
+
         self.assetWriterInput = AVAssetWriterInput(mediaType: .video, outputSettings: outputSettings)
         self.assetWriterInput.expectsMediaDataInRealTime = true
-        
+
         let sourcePixelBufferAttributes: [String: Any] = [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
         ]
-        
+
         self.pixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
             assetWriterInput: self.assetWriterInput,
             sourcePixelBufferAttributes: sourcePixelBufferAttributes
         )
-        
+
         if self.assetWriter.canAdd(self.assetWriterInput) {
             self.assetWriter.add(self.assetWriterInput)
         }
-        
+
         self.assetWriter.startWriting()
         self.assetWriter.startSession(atSourceTime: CMTime.zero)
     }
@@ -72,7 +72,7 @@ func encoderIngestYuvFrame(
 ) {
     let luminanceBytes = luminanceBytesRaw.toArray()
     let chrominanceBytes = chrominanceBytesRaw.toArray()
-    
+
     // Create a CVPixelBuffer from YUV data
     var pixelBuffer = createCvPixelBufferFromYuvFrameData(
         width,
@@ -83,7 +83,7 @@ func encoderIngestYuvFrame(
         chrominanceStride,
         chrominanceBytes
     )
-    
+
     // Append the CVPixelBuffer to the AVAssetWriter
     if enc.assetWriterInput.isReadyForMoreMediaData {
         let frameTime = CMTimeMake(value: Int64(displayTime), timescale: 1_000_000_000)
@@ -106,7 +106,7 @@ func encoderIngestBgraFrame(
     _ bgraBytesRaw: SRData
 ) {
     let bgraBytes = bgraBytesRaw.toArray()
-    
+
     // Create a CVPixelBuffer from BGRA data
     var pixelBuffer = createCvPixelBufferFromBgraFrameData(
         width,
@@ -115,7 +115,7 @@ func encoderIngestBgraFrame(
         bytesPerRow,
         bgraBytes
     )
-    
+
     // Append the CVPixelBuffer to the AVAssetWriter
     if enc.assetWriterInput.isReadyForMoreMediaData {
         let frameTime = CMTimeMake(value: Int64(displayTime), timescale: 1_000_000_000)
@@ -130,32 +130,32 @@ func encoderIngestBgraFrame(
 
 @_cdecl("encoder_finish")
 func encoderFinish(_ enc: Encoder) {
-    
+
     // TODO: figure out how to gracefully end session
     // enc.assetWriter.endSession(atSourceTime: CMTime)
-    
+
     enc.assetWriterInput.markAsFinished()
     enc.assetWriter.finishWriting {}
-    
+
     while enc.assetWriter.status == .writing {
         print("AVAssetWriter: still writing...")
         usleep(500000)
     }
-    
+
     print("AVAssetWriter: finished writing!")
 }
 
 class WindowManager: NSObject, SCStreamDelegate, SCStreamOutput {
     static let shared = WindowManager()
-    
+
     private override init() {
         super.init()
     }
-    
+
     var windowThumbnails = [SCDisplay:[WindowThumbnail]]()
     var allWindows = [SCWindow]()
     private var streams = [SCStream]()
-    
+
     func getWindows(filter: Bool = true, capture: Bool = true, completion: @escaping () -> Void) {
         SCContext.updateAvailableContent {
             Task {
@@ -181,7 +181,7 @@ class WindowManager: NSObject, SCStreamDelegate, SCStreamOutput {
             }
         }
     }
-    
+
     private func captureWindowThumbnails() async throws {
         let contentFilters = self.allWindows.map { SCContentFilter(desktopIndependentWindow: $0) }
         for (index, contentFilter) in contentFilters.enumerated() {
@@ -220,14 +220,14 @@ class WindowManager: NSObject, SCStreamDelegate, SCStreamOutput {
             }
         }
     }
-    
+
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
         let ciContext = CIContext()
         let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent)
         let nsImage = cgImage.map { NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height)) } ?? NSImage()
-        
+
         if let index = self.streams.firstIndex(of: stream), index < self.allWindows.count {
             let currentWindow = self.allWindows[index]
             let thumbnail = WindowThumbnail(image: nsImage, window: currentWindow)
@@ -247,12 +247,12 @@ class WindowManager: NSObject, SCStreamDelegate, SCStreamOutput {
             self.streams[index].stopCapture()
         }
     }
-    
+
     func captureWindowScreen(windowID: CGWindowID) async throws -> Data {
         guard let window = allWindows.first(where: { $0.windowID == windowID }) else {
             throw NSError(domain: "WindowManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Window not found"])
         }
-        
+
         let contentFilter = SCContentFilter(desktopIndependentWindow: window)
         let streamConfiguration = SCStreamConfiguration()
         streamConfiguration.width = Int(window.frame.width)
@@ -263,35 +263,35 @@ class WindowManager: NSObject, SCStreamDelegate, SCStreamOutput {
         streamConfiguration.showsCursor = false
         streamConfiguration.scalesToFit = true
         streamConfiguration.queueDepth = 1
-        
+
         let stream = SCStream(filter: contentFilter, configuration: streamConfiguration, delegate: nil)
-        
+
         let captureDelegate = SingleFrameCaptureDelegate()
-        
+
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
             captureDelegate.onFrame = { sampleBuffer in
                 guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
                     continuation.resume(throwing: NSError(domain: "WindowManager", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to get pixel buffer"]))
                     return
                 }
-                
+
                 let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
                 let ciContext = CIContext()
                 guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else {
                     continuation.resume(throwing: NSError(domain: "WindowManager", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to create CGImage"]))
                     return
                 }
-                
+
                 let nsImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
                 guard let tiffData = nsImage.tiffRepresentation else {
                     continuation.resume(throwing: NSError(domain: "WindowManager", code: 4, userInfo: [NSLocalizedDescriptionKey: "Failed to get TIFF representation"]))
                     return
                 }
-                
+
                 continuation.resume(returning: tiffData)
                 stream.stopCapture()
             }
-            
+
             do {
                 try stream.addStreamOutput(captureDelegate, type: .screen, sampleHandlerQueue: .main)
                 stream.startCapture()
@@ -304,7 +304,7 @@ class WindowManager: NSObject, SCStreamDelegate, SCStreamOutput {
 
 class SingleFrameCaptureDelegate: NSObject, SCStreamOutput {
     var onFrame: ((CMSampleBuffer) -> Void)?
-    
+
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         onFrame?(sampleBuffer)
     }
@@ -313,11 +313,11 @@ class SingleFrameCaptureDelegate: NSObject, SCStreamOutput {
 actor CaptureState {
     var capturedData: Data?
     var captureError: Error?
-    
+
     func setCapturedData(_ data: Data) {
         capturedData = data
     }
-    
+
     func setCaptureError(_ error: Error) {
         captureError = error
     }
@@ -335,7 +335,7 @@ class WindowInfo: NSObject {
     let is_on_screen: Bool
     let id: Int
     let thumbnail_data: Data
-    
+
     init(title: SRString, app_name: SRString, bundle_id: SRString, is_on_screen: Bool, id: Int, thumbnail_data: Data) {
         self.title = title
         self.app_name = app_name
@@ -350,7 +350,7 @@ class WindowInfo: NSObject {
 func getWindowsInfo(_ filter: Bool, _ capture: Bool) -> SRObjectArray {
     let windowManager = WindowManager.shared
     let semaphore = DispatchSemaphore(value: 0)
-    
+
     windowManager.getWindows(filter: filter, capture: capture) {
         semaphore.signal()
     }
@@ -368,7 +368,6 @@ func getWindowsInfo(_ filter: Bool, _ capture: Bool) -> SRObjectArray {
             bundle_id: SRString(window.owningApplication?.bundleIdentifier ?? ""),
             is_on_screen: window.isOnScreen,
             id: Int(window.windowID),
-//            thumbnail_data: thumbnail.image.tiffRepresentation ?? Data()
             thumbnail_data: Data()
         )
         result.append(windowInfo)
@@ -379,6 +378,6 @@ func getWindowsInfo(_ filter: Bool, _ capture: Bool) -> SRObjectArray {
 
 @_cdecl("get_app_icon")
 func getAppIcon(_ bundleId: SRString) -> SRString {
-    let base64Icon = SCContext.getAppIconBase64(bundleId.toString())
-    return SRString(base64Icon)
+    let appIcon = SCContext.getAppIconPath(bundleId.toString());
+    return SRString(appIcon ?? "")
 }

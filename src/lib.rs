@@ -183,6 +183,7 @@ pub fn get_windows_list(filter: bool, capture: bool) -> Vec<WindowInfo> {
 
 pub fn get_app_icon(bundle_id: &str) -> String {
     let data = unsafe { mac::get_app_icon(bundle_id.into()) };
-    let prefix = "data:image/jpeg;base64";
-    return format!("{prefix},{data}");
+    // let prefix = "data:image/png;base64";
+    // return format!("{prefix},{data}");
+    return format!("{data}");
 }

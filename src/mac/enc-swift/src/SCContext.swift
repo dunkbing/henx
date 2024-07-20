@@ -54,7 +54,7 @@ class SCContext {
         "com.dwarvesv.minimalbar",
         "com.bjango.istatmenus.status"
     ]
-    
+
     static func updateAvailableContent(
         completion: @escaping () -> Void
     ) {
@@ -82,7 +82,7 @@ class SCContext {
             completion()
         }
     }
-    
+
     static func getWindows(
         isOnScreen: Bool = true,
         hideSelf: Bool = true
@@ -130,11 +130,10 @@ class SCContext {
     static func getAppIconBase64(
         _ bundleIdentifier: String
     ) -> String {
-        
-        
         if let appURL = NSWorkspace.shared.urlForApplication(
             withBundleIdentifier: bundleIdentifier
         ) {
+            print(appURL.path);
             let icon = NSWorkspace.shared.icon(forFile: appURL.path)
             icon.size = NSSize(width: 69, height: 69)
             return imageToBase64(icon, 0.2)
@@ -146,7 +145,49 @@ class SCContext {
         }
         return ""
     }
-    
+
+    static func getAppIconPath(_ bundleIdentifier: String) -> String? {
+        func getIconFilePath(_ fileName: String) -> String {
+            let tempDirectory = NSTemporaryDirectory()
+            return tempDirectory.appending(fileName)
+        }
+
+        func saveImageToFile(_ image: NSImage, filePath: String) -> String? {
+            guard let tiffData = image.tiffRepresentation,
+                  let bitmap = NSBitmapImageRep(data: tiffData),
+                  let pngData = bitmap.representation(using: .png, properties: [:]) else {
+                return nil
+            }
+
+            do {
+                try pngData.write(to: URL(fileURLWithPath: filePath))
+                return filePath
+            } catch {
+                print("Error writing image to file: \(error)")
+                return nil
+            }
+        }
+
+        let fileName = (bundleIdentifier as NSString).lastPathComponent + ".png"
+        let filePath = getIconFilePath(fileName)
+
+        if FileManager.default.fileExists(atPath: filePath) {
+            return filePath
+        } else {
+            if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) {
+                let icon = NSWorkspace.shared.icon(forFile: appURL.path)
+                icon.size = NSSize(width: 69, height: 69)
+                return saveImageToFile(icon, filePath: filePath)
+            } else {
+                if let icon = NSImage(systemSymbolName: "questionmark.app.dashed", accessibilityDescription: "blank icon") {
+                    icon.size = NSSize(width: 69, height: 69)
+                    return saveImageToFile(icon, filePath: filePath)
+                }
+            }
+        }
+        return nil
+    }
+
     static func updateAudioSettings(
         format: String = UserDefaults.standard.string(
             forKey: "audioFormat"
@@ -184,7 +225,7 @@ class SCContext {
             )
         }
     }
-    
+
     static func showNotification(
         title: String,
         body: String,
@@ -213,7 +254,7 @@ class SCContext {
             }
         }
     }
-    
+
     private static func requestPermissions() {
         DispatchQueue.main.async {
             let alert = NSAlert()
