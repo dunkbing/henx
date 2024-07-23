@@ -1,12 +1,9 @@
 #[cfg(target_os = "macos")]
 mod mac;
 
-use std::io::Write;
-
 #[cfg(target_os = "macos")]
 use mac::{encoder_finish, encoder_ingest_bgra_frame, encoder_ingest_yuv_frame, encoder_init, Int};
 
-use swift_rs::SRString;
 #[cfg(target_os = "windows")]
 use windows_capture::encoder::{
     VideoEncoder as WVideoEncoder, VideoEncoderQuality, VideoEncoderType,
